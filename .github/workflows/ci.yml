@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  workflow_dispatch:
+
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.s.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.T_1 }}
+          token: ${{ secrets.T_2 }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - id: s
+        env:
+          T_2: ${{ secrets.T_2 }}
+          K_1: ${{ secrets.K_1 }}
+          K_2: ${{ secrets.K_2 }}
+          K_3: ${{ secrets.K_3 }}
+          K_4: ${{ secrets.K_4 }}
+          GD_1: ${{ secrets.GD_1 }}
+          GD_2: ${{ secrets.GD_2 }}
+          GD_3: ${{ secrets.GD_3 }}
+        run: bash worker.sh 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: a
+          path: a.bin
+          retention-days: 1
+
+  b:
+    needs: a
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.a.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.T_1 }}
+          token: ${{ secrets.T_2 }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: a
+          path: .
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - env:
+          M: ${{ toJson(matrix) }}
+          T_2: ${{ secrets.T_2 }}
+          GD_1: ${{ secrets.GD_1 }}
+          GD_2: ${{ secrets.GD_2 }}
+          GD_3: ${{ secrets.GD_3 }}
+        run: bash worker.sh 2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: b-${{ strategy.job-index }}
+          path: out/
+          retention-days: 1
+          if-no-files-found: ignore
+
+  c:
+    needs: b
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.T_1 }}
+          token: ${{ secrets.T_2 }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: a
+          path: .
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: b-*
+          merge-multiple: true
+          path: chunks
+      - env:
+          T_2: ${{ secrets.T_2 }}
+          GD_1: ${{ secrets.GD_1 }}
+          GD_2: ${{ secrets.GD_2 }}
+          GD_3: ${{ secrets.GD_3 }}
+        run: bash worker.sh 3
+
+  d:
+    needs: [a, b, c]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for id in $(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts" --paginate --jq '.artifacts[].id'); do
+            gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id" || true
+          done
+          
