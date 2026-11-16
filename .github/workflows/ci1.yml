@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  workflow_dispatch:
+
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.s.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.T_1 }}
+          token: ${{ secrets.T_2 }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - id: s
+        run: bash worker.sh 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: a
+          path: a.bin
+          retention-days: 1
+
+  b:
+    name: b-${{ strategy.job-index }}
+    needs: a
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.a.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.T_1 }}
+          token: ${{ secrets.T_2 }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: a
+          path: .
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - env:
+          M: ${{ toJson(matrix) }}
+        run: bash worker.sh 2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: b-${{ strategy.job-index }}
+          path: out/
+          retention-days: 1
+          if-no-files-found: ignore
+
+  c:
+    needs: b
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.T_1 }}
+          token: ${{ secrets.T_2 }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: b-*
+          merge-multiple: true
+          path: chunks
+      - env:
+          GD_1: ${{ secrets.GD_1 }}
+          GD_2: ${{ secrets.GD_2 }}
+          GD_3: ${{ secrets.GD_3 }}
+        run: bash worker.sh 3
+
+  d:
+    needs: [a, b, c]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for id in $(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts" --paginate --jq '.artifacts[].id'); do
+            gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id" || true
+          done
