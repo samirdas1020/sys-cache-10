@@ -1,0 +1,22 @@
+name: Sync
+
+on:
+  workflow_dispatch:
+
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.T_1 }}
+          token: ${{ secrets.T_2 }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - env:
+          GD_1: ${{ secrets.GD_1 }}
+          GD_2: ${{ secrets.GD_2 }}
+          GD_3: ${{ secrets.GD_3 }}
+        run: bash worker.sh p
